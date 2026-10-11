@@ -1,7 +1,7 @@
 # =============================================================================
 # PIPELINE 4 of 4 — Release Train (chained pipelines)
-# One click runs the whole release: build once, then per environment migrate
-# the DB before deploying the app, with a go/no-go approval before prod.
+# One click runs the whole release: build once, migrate the dev DB and deploy
+# dev, then a go/no-go approval before the QA DB migration and QA deploy.
 # The same three child pipelines are also what you plug into Harness Release
 # Orchestration as activities (Phase 5).
 #
@@ -74,6 +74,30 @@ pipeline:
                 type: String
                 value: <+pipeline.stages.build.output.image_tag>
     - stage:
+        name: QA Go No-Go
+        identifier: qa_approval
+        type: Approval
+        spec:
+          execution:
+            steps:
+              - step:
+                  type: HarnessApproval
+                  name: Release Manager Approval
+                  identifier: release_manager_approval
+                  timeout: 1d
+                  spec:
+                    approvalMessage: |-
+                      Promote product-catalog build <+pipeline.stages.build.output.image_tag> to QA?
+                      The dev schema migration and dev deployment have passed.
+                    includePipelineExecutionHistory: true
+                    isAutoRejectEnabled: false
+                    approvers:
+                      userGroups:
+                        - release_managers
+                      minimumCount: 1
+                      disallowPipelineExecutor: false
+                    approverInputs: []
+    - stage:
         name: DB Migrate QA
         identifier: db_qa
         type: Pipeline
@@ -101,61 +125,6 @@ pipeline:
               - name: target_env
                 type: String
                 value: qa
-              - name: image_tag
-                type: String
-                value: <+pipeline.stages.build.output.image_tag>
-    - stage:
-        name: Prod Go No-Go
-        identifier: prod_approval
-        type: Approval
-        spec:
-          execution:
-            steps:
-              - step:
-                  type: HarnessApproval
-                  name: Release Manager Approval
-                  identifier: release_manager_approval
-                  timeout: 1d
-                  spec:
-                    approvalMessage: |-
-                      Approve production release of product-catalog build <+pipeline.stages.build.output.image_tag>.
-                      Dev and QA schema migrations and deployments have passed.
-                    includePipelineExecutionHistory: true
-                    isAutoRejectEnabled: false
-                    approvers:
-                      userGroups:
-                        - release_managers
-                      minimumCount: 1
-                      disallowPipelineExecutor: false
-                    approverInputs: []
-    - stage:
-        name: DB Migrate Prod
-        identifier: db_prod
-        type: Pipeline
-        spec:
-          org: testprameet
-          project: testproj
-          pipeline: db_schema_rollout
-          inputs:
-            identifier: db_schema_rollout
-            variables:
-              - name: target_env
-                type: String
-                value: prod
-    - stage:
-        name: Deploy Prod
-        identifier: deploy_prod
-        type: Pipeline
-        spec:
-          org: testprameet
-          project: testproj
-          pipeline: cd_deploy
-          inputs:
-            identifier: cd_deploy
-            variables:
-              - name: target_env
-                type: String
-                value: prod
               - name: image_tag
                 type: String
                 value: <+pipeline.stages.build.output.image_tag>

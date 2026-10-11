@@ -1,5 +1,6 @@
 # OPA policy for the Harness Policy Engine (entity: Pipeline, events: On Save + On Run).
-#   1. Any chained stage that deploys to prod must come after an Approval stage.
+#   1. Any chained stage that targets an environment beyond dev (DB migration or
+#      deploy) must come after an Approval stage.
 #   2. Every CI pipeline must run an Aqua Trivy image scan (anywhere, incl. parallel blocks).
 package pipeline
 
@@ -9,9 +10,9 @@ deny[msg] {
     stage.type == "Pipeline"
     v := stage.spec.inputs.variables[_]
     v.name == "target_env"
-    v.value == "prod"
+    v.value != "dev"
     not approval_before(i)
-    msg := sprintf("Stage '%s' deploys to prod and must come after an Approval stage", [stage.identifier])
+    msg := sprintf("Stage '%s' targets '%s' and must come after an Approval stage", [stage.identifier, v.value])
 }
 
 approval_before(idx) {
