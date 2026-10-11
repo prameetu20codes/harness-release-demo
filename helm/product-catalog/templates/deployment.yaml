@@ -70,17 +70,23 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.database.existingSecret }}
                   key: {{ .Values.database.passwordKey }}
+          # Liveness/readiness only start once startup succeeds, so a slow JVM
+          # start on small CPU limits is not killed mid-boot.
+          startupProbe:
+            httpGet:
+              path: {{ .Values.probes.liveness.path }}
+              port: http
+            periodSeconds: 5
+            failureThreshold: 36
           livenessProbe:
             httpGet:
               path: {{ .Values.probes.liveness.path }}
               port: http
-            initialDelaySeconds: 30
             periodSeconds: 10
           readinessProbe:
             httpGet:
               path: {{ .Values.probes.readiness.path }}
               port: http
-            initialDelaySeconds: 15
             periodSeconds: 5
           resources:
             {{- toYaml .Values.resources | nindent 12 }}

@@ -11,4 +11,4 @@ autoscaling:
   enabled: false
 resources:
   requests: {cpu: 100m, memory: 256Mi}
-  limits: {cpu: 300m, memory: 384Mi}
+  limits: {cpu: 500m, memory: 384Mi}
