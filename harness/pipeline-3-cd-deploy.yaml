@@ -122,10 +122,10 @@ pipeline:
                           spec:
                             tag: <+pipeline.variables.image_tag>
           environment:
-            environmentRef: <+pipeline.variables.target_env>
+            environmentRef: releasedevqa
             deployToAll: false
             infrastructureDefinitions:
-              - identifier: k8s
+              - identifier: <+pipeline.variables.target_env>
           execution:
             steps:
               - stepGroup:
