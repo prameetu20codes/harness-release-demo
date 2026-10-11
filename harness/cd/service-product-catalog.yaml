@@ -23,7 +23,7 @@ service:
                   branch: main
                   folderPath: helm/product-catalog
               valuesPaths:
-                - helm/product-catalog/values-<+env.identifier>.yaml
+                - helm/product-catalog/values-<+infra.infraIdentifier>.yaml
                 - helm/product-catalog/values-harness.yaml
               helmVersion: V3
               skipResourceVersioning: false

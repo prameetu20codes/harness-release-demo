@@ -1,13 +1,13 @@
-# One infrastructure definition per environment, all with identifier `k8s`
-# (identifiers only need to be unique inside an environment). That lets the CD
-# pipeline pick the right cluster/namespace from target_env alone.
+# Three infrastructure definitions inside environment releasedevqa. Their
+# identifiers must stay dev / qa / prod: the CD pipeline selects them from
+# target_env and the service picks values-<+infra.infraIdentifier>.yaml.
 # Replace K8S_CONNECTOR with your Kubernetes connector identifier.
 infrastructureDefinition:
-  name: k8s
-  identifier: k8s
+  name: dev
+  identifier: dev
   orgIdentifier: testprameet
   projectIdentifier: testproj
-  environmentRef: dev
+  environmentRef: releasedevqa
   deploymentType: Kubernetes
   type: KubernetesDirect
   spec:
@@ -17,11 +17,11 @@ infrastructureDefinition:
   allowSimultaneousDeployments: false
 ---
 infrastructureDefinition:
-  name: k8s
-  identifier: k8s
+  name: qa
+  identifier: qa
   orgIdentifier: testprameet
   projectIdentifier: testproj
-  environmentRef: qa
+  environmentRef: releasedevqa
   deploymentType: Kubernetes
   type: KubernetesDirect
   spec:
@@ -31,11 +31,11 @@ infrastructureDefinition:
   allowSimultaneousDeployments: false
 ---
 infrastructureDefinition:
-  name: k8s
-  identifier: k8s
+  name: prod
+  identifier: prod
   orgIdentifier: testprameet
   projectIdentifier: testproj
-  environmentRef: prod
+  environmentRef: releasedevqa
   deploymentType: Kubernetes
   type: KubernetesDirect
   spec:
