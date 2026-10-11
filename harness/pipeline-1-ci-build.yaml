@@ -9,6 +9,12 @@ pipeline:
   orgIdentifier: testprameet
   tags:
     module: ci
+  variables:
+    - name: release_version
+      type: String
+      description: Extra image tag for release builds (e.g. 1.0.0); non-release builds push "snapshot"
+      required: false
+      value: <+input>.default(snapshot)
   properties:
     ci:
       codebase:
@@ -60,6 +66,7 @@ pipeline:
                     tags:
                       - <+pipeline.sequenceId>
                       - <+codebase.shortCommitSha>
+                      - <+pipeline.variables.release_version>
                     caching: true
                     dockerfile: app/Dockerfile
                     context: app
