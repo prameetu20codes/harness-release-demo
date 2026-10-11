@@ -1,0 +1,7 @@
+# Applied last by the Harness service. Harness resolves these expressions from
+# the artifact selected at deploy time, so the chart never hardcodes an image.
+image:
+  repository: "<+artifact.imagePath>"
+  tag: "<+artifact.tag>"
+appVersion: "<+artifact.tag>"
+dockercfg: "<+artifact.imagePullSecret>"

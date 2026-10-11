@@ -1,0 +1,29 @@
+# Three environments. Create each separately (Environments > New > YAML),
+# pasting one document at a time. Identifiers must stay dev / qa / prod because
+# the service picks values-<+env.identifier>.yaml and the pipelines pass these ids.
+environment:
+  name: dev
+  identifier: dev
+  orgIdentifier: testprameet
+  projectIdentifier: testproj
+  type: PreProduction
+  tags:
+    tier: lower
+---
+environment:
+  name: qa
+  identifier: qa
+  orgIdentifier: testprameet
+  projectIdentifier: testproj
+  type: PreProduction
+  tags:
+    tier: lower
+---
+environment:
+  name: prod
+  identifier: prod
+  orgIdentifier: testprameet
+  projectIdentifier: testproj
+  type: Production
+  tags:
+    tier: prod

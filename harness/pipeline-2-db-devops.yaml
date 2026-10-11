@@ -1,49 +1,87 @@
 # =============================================================================
-# PIPELINE 2 of 4 — DB DevOps: Apply Liquibase schema changes per environment
-# Uses the Harness DB DevOps stage (type: DBSchemaOps / DBOps).
-# The DB Schema points at db/changelog/db.changelog-master.yaml in this repo.
-# A DB Instance is registered per environment (dev/qa/prod) with its JDBC URL +
-# secret-backed credentials. Harness applies only the un-applied changesets.
+# PIPELINE 2 of 4 — DB DevOps: preview + apply Liquibase changes to ONE env
+# Reusable: the release flow calls it once per environment (dev, qa, prod).
 #
-# KEY DEMO POINT: schema is promoted BEFORE the app so the running code never
-# sees a column it expects but the DB lacks.
+# Needs (Phase 3):
+#   - DB Schema   `product_catalog_schema` -> repo harness-release-demo,
+#                 path db/changelog/db.changelog-master.yaml (connector harnesstesting)
+#   - DB Instances `dev`, `qa`, `prod` under that schema (one JDBC connector each)
+#   - K8S_CONNECTOR + namespace where DB DevOps step containers run
+#     (the namespace your delegate is installed in is the simplest choice)
 # =============================================================================
 pipeline:
   name: 2 - DB Schema Rollout
   identifier: db_schema_rollout
-  projectIdentifier: PRODUCT_CATALOG
-  orgIdentifier: default
+  projectIdentifier: testproj
+  orgIdentifier: testprameet
+  tags:
+    module: dbops
+  variables:
+    - name: target_env
+      type: String
+      description: Database instance to migrate
+      required: true
+      value: <+input>.allowedValues(dev,qa,prod)
   stages:
     - stage:
-        name: DB Migrate
-        identifier: db_migrate
-        type: PipelineRollback   # placeholder-safe; set to DBOps stage in UI
+        name: Migrate Schema
+        identifier: migrate_schema
+        type: Custom
         spec:
           execution:
             steps:
-              - step:
-                  name: Dry Run (Preview SQL)
-                  identifier: db_dry_run
-                  type: DBSchemaApply
-                  spec:
-                    dbSchema: product_catalog_schema     # DB Schema entity id
-                    dbInstance: <+input>                 # dev / qa / prod instance
-                    runAsDryRun: true                    # preview changeset SQL only
-              - step:
-                  name: Apply Schema Changes
-                  identifier: db_apply
-                  type: DBSchemaApply
-                  spec:
-                    dbSchema: product_catalog_schema
-                    dbInstance: <+input>
-                    runAsDryRun: false
-                  failureStrategies:
-                    - onFailure:
-                        errors: [AllErrors]
-                        action:
-                          type: StageRollback   # Liquibase rollback of applied set
-# -----------------------------------------------------------------------------
-# NOTE: In the Harness UI, create this stage via "Database DevOps" so the correct
-# step palette (DBSchemaApply / DBSchemaRollback) is generated. The block above
-# is a readable reference of the shape you will end up with.
-# -----------------------------------------------------------------------------
+              - stepGroup:
+                  name: Liquibase
+                  identifier: liquibase
+                  stepGroupInfra:
+                    type: KubernetesDirect
+                    spec:
+                      connectorRef: K8S_CONNECTOR
+                      namespace: harness-delegate-ng
+                  steps:
+                    - step:
+                        type: LiquibaseCommand
+                        name: Preview SQL
+                        identifier: preview_sql
+                        spec:
+                          connectorRef: account.harnessImage
+                          dbSchema: product_catalog_schema
+                          dbInstance: <+pipeline.variables.target_env>
+                          command: updateSQL
+                        timeout: 10m
+                    - step:
+                        type: DBSchemaApply
+                        name: Apply Schema
+                        identifier: apply_schema
+                        spec:
+                          connectorRef: account.harnessImage
+                          dbSchema: product_catalog_schema
+                          dbInstance: <+pipeline.variables.target_env>
+                          tag: release-<+pipeline.sequenceId>
+                        timeout: 10m
+            rollbackSteps:
+              - stepGroup:
+                  name: Liquibase Rollback
+                  identifier: liquibase_rollback
+                  stepGroupInfra:
+                    type: KubernetesDirect
+                    spec:
+                      connectorRef: K8S_CONNECTOR
+                      namespace: harness-delegate-ng
+                  steps:
+                    - step:
+                        type: DBSchemaRollback
+                        name: Rollback Schema
+                        identifier: rollback_schema
+                        spec:
+                          connectorRef: account.harnessImage
+                          dbSchema: product_catalog_schema
+                          dbInstance: <+pipeline.variables.target_env>
+                          tag: release-<+pipeline.sequenceId>
+                        timeout: 10m
+        failureStrategies:
+          - onFailure:
+              errors:
+                - AllErrors
+              action:
+                type: StageRollback

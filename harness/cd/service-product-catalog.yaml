@@ -1,0 +1,41 @@
+# Service: Helm chart from Git + image from Docker Hub.
+# Store type assumes `harnesstesting` is a GitHub connector; use GitLab /
+# Bitbucket / Git to match the connector type if it is something else.
+service:
+  name: product-catalog
+  identifier: product_catalog
+  orgIdentifier: testprameet
+  projectIdentifier: testproj
+  serviceDefinition:
+    type: Kubernetes
+    spec:
+      manifests:
+        - manifest:
+            identifier: product_catalog_chart
+            type: HelmChart
+            spec:
+              store:
+                type: Github
+                spec:
+                  connectorRef: harnesstesting
+                  repoName: harness-release-demo
+                  gitFetchType: Branch
+                  branch: main
+                  folderPath: helm/product-catalog
+              valuesPaths:
+                - helm/product-catalog/values-<+env.identifier>.yaml
+                - helm/product-catalog/values-harness.yaml
+              helmVersion: V3
+              skipResourceVersioning: false
+              enableDeclarativeRollback: false
+              fetchHelmChartMetadata: false
+      artifacts:
+        primary:
+          primaryArtifactRef: dockerhub
+          sources:
+            - identifier: dockerhub
+              type: DockerRegistry
+              spec:
+                connectorRef: ffdockerconnector
+                imagePath: prameet2025/release-app
+                tag: <+input>

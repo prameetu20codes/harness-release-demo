@@ -1,0 +1,45 @@
+# One infrastructure definition per environment, all with identifier `k8s`
+# (identifiers only need to be unique inside an environment). That lets the CD
+# pipeline pick the right cluster/namespace from target_env alone.
+# Replace K8S_CONNECTOR with your Kubernetes connector identifier.
+infrastructureDefinition:
+  name: k8s
+  identifier: k8s
+  orgIdentifier: testprameet
+  projectIdentifier: testproj
+  environmentRef: dev
+  deploymentType: Kubernetes
+  type: KubernetesDirect
+  spec:
+    connectorRef: K8S_CONNECTOR
+    namespace: catalog-dev
+    releaseName: product-catalog
+  allowSimultaneousDeployments: false
+---
+infrastructureDefinition:
+  name: k8s
+  identifier: k8s
+  orgIdentifier: testprameet
+  projectIdentifier: testproj
+  environmentRef: qa
+  deploymentType: Kubernetes
+  type: KubernetesDirect
+  spec:
+    connectorRef: K8S_CONNECTOR
+    namespace: catalog-qa
+    releaseName: product-catalog
+  allowSimultaneousDeployments: false
+---
+infrastructureDefinition:
+  name: k8s
+  identifier: k8s
+  orgIdentifier: testprameet
+  projectIdentifier: testproj
+  environmentRef: prod
+  deploymentType: Kubernetes
+  type: KubernetesDirect
+  spec:
+    connectorRef: K8S_CONNECTOR
+    namespace: catalog-prod
+    releaseName: product-catalog
+  allowSimultaneousDeployments: false

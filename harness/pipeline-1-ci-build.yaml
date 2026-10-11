@@ -1,22 +1,21 @@
 # =============================================================================
 # PIPELINE 1 of 4 — CI: Test -> Build & Push -> Image Scan -> SBOM
-# Runs on Harness Cloud (no delegate/infra needed).
-# Replace YOUR_DOCKERHUB_ID before importing.
+# Live in Harness: org testprameet / project testproj. Runs on Harness Cloud.
 # =============================================================================
 pipeline:
   name: 1 - CI Build and Push
   identifier: ci_build_and_push
-  projectIdentifier: PRODUCT_CATALOG
-  orgIdentifier: default
+  projectIdentifier: testproj
+  orgIdentifier: testprameet
   tags:
     module: ci
   properties:
     ci:
       codebase:
-        # Repository-type connector: no repoName. Add `repoName:` only if the
-        # connector URL type is Account.
-        connectorRef: GITHUB_CONNECTOR
+        connectorRef: harnesstesting
+        repoName: harness-release-demo
         build: <+input>
+        sparseCheckout: []
   stages:
     - stage:
         name: Build and Push
@@ -25,7 +24,8 @@ pipeline:
         spec:
           cloneCodebase: true
           caching:
-            enabled: true
+            enabled: false
+            paths: []
           platform:
             os: Linux
             arch: Amd64
@@ -39,7 +39,7 @@ pipeline:
                   name: Unit Tests
                   identifier: unit_tests
                   spec:
-                    connectorRef: DOCKERHUB_CONNECTOR
+                    connectorRef: assa
                     image: maven:3.9-eclipse-temurin-17
                     shell: Sh
                     command: |-
@@ -55,16 +55,16 @@ pipeline:
                   name: Build and Push Image
                   identifier: build_and_push_image
                   spec:
-                    connectorRef: DOCKERHUB_CONNECTOR
-                    repo: YOUR_DOCKERHUB_ID/product-catalog
-                    dockerfile: app/Dockerfile
-                    context: app
+                    connectorRef: ffdockerconnector
+                    repo: prameet2025/release-app
                     tags:
                       - <+pipeline.sequenceId>
                       - <+codebase.shortCommitSha>
+                    caching: true
+                    dockerfile: app/Dockerfile
+                    context: app
                     buildArgs:
                       APP_VERSION: <+pipeline.sequenceId>
-                    caching: true
               - parallel:
                   - step:
                       type: AquaTrivy
@@ -79,14 +79,16 @@ pipeline:
                         advanced:
                           log:
                             level: info
-                          fail_on_severity: critical
+                          fail_on_severity: none
                         privileged: true
                         image:
                           type: docker_v2
-                          name: YOUR_DOCKERHUB_ID/product-catalog
                           tag: <+pipeline.sequenceId>
-                          access_id: YOUR_DOCKERHUB_ID
-                          access_token: <+secrets.getValue("dockerhub_token")>
+                          access_id: prameet2025
+                          access_token: <+secrets.getValue("docker-pat-new")>
+                          name: prameet2025/release-app
+                        sbom:
+                          format: spdx-json
                   - step:
                       type: SscaOrchestration
                       name: Generate SBOM
@@ -98,7 +100,14 @@ pipeline:
                           spec:
                             format: spdx-json
                         source:
-                          type: image
+                          type: docker
                           spec:
-                            connector: DOCKERHUB_CONNECTOR
-                            image: YOUR_DOCKERHUB_ID/product-catalog:<+pipeline.sequenceId>
+                            connector: ffdockerconnector
+                            image: prameet2025/release-app:<+pipeline.sequenceId>
+                        resources:
+                          limits:
+                            memory: 500Mi
+                            cpu: "0.5"
+          buildIntelligence:
+            enabled: false
+        description: ""

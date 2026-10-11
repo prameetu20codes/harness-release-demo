@@ -3,7 +3,12 @@
 {{- end -}}
 
 {{- define "product-catalog.fullname" -}}
-{{- printf "%s-%s" .Release.Name (include "product-catalog.name" .) | trunc 63 | trimSuffix "-" -}}
+{{- $name := include "product-catalog.name" . -}}
+{{- if contains $name .Release.Name -}}
+{{- .Release.Name | trunc 63 | trimSuffix "-" -}}
+{{- else -}}
+{{- printf "%s-%s" .Release.Name $name | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
 {{- end -}}
 
 {{- define "product-catalog.labels" -}}

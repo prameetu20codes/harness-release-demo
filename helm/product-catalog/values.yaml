@@ -5,10 +5,12 @@
 replicaCount: 1
 
 image:
-  repository: docker.io/YOUR_DOCKERHUB_ID/product-catalog
+  repository: docker.io/prameet2025/release-app
   tag: latest
   pullPolicy: IfNotPresent
 
+# Base64 docker config; Harness fills it from <+artifact.imagePullSecret>.
+dockercfg: ""
 imagePullSecrets: []
 
 serviceAccount:

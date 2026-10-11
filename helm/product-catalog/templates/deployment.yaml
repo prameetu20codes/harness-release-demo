@@ -19,14 +19,25 @@ spec:
         {{- include "product-catalog.selectorLabels" . | nindent 8 }}
     spec:
       serviceAccountName: {{ include "product-catalog.serviceAccountName" . }}
-      {{- with .Values.imagePullSecrets }}
+      {{- if or .Values.dockercfg .Values.imagePullSecrets }}
       imagePullSecrets:
+        {{- if .Values.dockercfg }}
+        - name: {{ include "product-catalog.fullname" . }}-dockercfg
+        {{- end }}
+        {{- with .Values.imagePullSecrets }}
         {{- toYaml . | nindent 8 }}
+        {{- end }}
       {{- end }}
       securityContext:
         runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
         seccompProfile:
           type: RuntimeDefault
+      volumes:
+        - name: tmp
+          emptyDir: {}
       containers:
         - name: {{ include "product-catalog.name" . }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -36,6 +47,9 @@ spec:
             readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
           ports:
             - name: http
               containerPort: {{ .Values.service.targetPort }}

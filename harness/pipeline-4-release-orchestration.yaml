@@ -1,73 +1,167 @@
 # =============================================================================
-# PIPELINE 4 of 4 — RELEASE ORCHESTRATION (the "conductor")
-# Clubs the three child pipelines into ONE governed release train using
-# Pipeline-chaining stages. This is what you run/demo end-to-end. It models the
-# release as ordered "activities": Build -> (per env) DB Migrate -> Deploy -> Verify,
-# with approvals, freeze-window governance, and notifications between them.
+# PIPELINE 4 of 4 — Release Train (chained pipelines)
+# One click runs the whole release: build once, then per environment migrate
+# the DB before deploying the app, with a go/no-go approval before prod.
+# The same three child pipelines are also what you plug into Harness Release
+# Orchestration as activities (Phase 5).
 #
-# Each stage below is type: Pipeline — it invokes a child pipeline and waits.
+# Needs: user group `release_managers`; secret `slack_release_webhook` before
+# you flip the notification rule to enabled.
 # =============================================================================
 pipeline:
-  name: 4 - Release Orchestration
-  identifier: release_orchestration
-  projectIdentifier: PRODUCT_CATALOG
-  orgIdentifier: default
+  name: 4 - Release Train
+  identifier: release_train
+  projectIdentifier: testproj
+  orgIdentifier: testprameet
+  tags:
+    module: release
+  variables:
+    - name: release_branch
+      type: String
+      description: Branch to build and release
+      required: true
+      value: <+input>.default(main)
   stages:
     - stage:
-        name: "Activity 1 - Build Artifact"
-        identifier: act_build
+        name: Build
+        identifier: build
         type: Pipeline
         spec:
-          org: default
-          project: PRODUCT_CATALOG
+          org: testprameet
+          project: testproj
           pipeline: ci_build_and_push
-          inputs: {}          # supply codebase build inputs here / via trigger
+          inputs:
+            identifier: ci_build_and_push
+            properties:
+              ci:
+                codebase:
+                  build:
+                    type: branch
+                    spec:
+                      branch: <+pipeline.variables.release_branch>
+          outputs:
+            - name: image_tag
+              value: <+pipeline.sequenceId>
     - stage:
-        name: "Activity 2 - DB Migrate Dev"
-        identifier: act_db_dev
+        name: DB Migrate Dev
+        identifier: db_dev
         type: Pipeline
         spec:
-          org: default
-          project: PRODUCT_CATALOG
+          org: testprameet
+          project: testproj
           pipeline: db_schema_rollout
           inputs:
-            dbInstance: dev
+            identifier: db_schema_rollout
+            variables:
+              - name: target_env
+                type: String
+                value: dev
     - stage:
-        name: "Activity 3 - Deploy + Verify Dev/QA"
-        identifier: act_deploy_lower
+        name: Deploy Dev
+        identifier: deploy_dev
         type: Pipeline
         spec:
-          org: default
-          project: PRODUCT_CATALOG
+          org: testprameet
+          project: testproj
           pipeline: cd_deploy
           inputs:
-            imageTag: <+pipeline.stages.act_build.spec.execution... sequenceId>
-    # --- Production activity is fenced behind governance ---
+            identifier: cd_deploy
+            variables:
+              - name: target_env
+                type: String
+                value: dev
+              - name: image_tag
+                type: String
+                value: <+pipeline.stages.build.output.image_tag>
     - stage:
-        name: "Activity 4 - DB Migrate Prod"
-        identifier: act_db_prod
+        name: DB Migrate QA
+        identifier: db_qa
         type: Pipeline
-        when:
-          pipelineStatus: Success
         spec:
-          org: default
-          project: PRODUCT_CATALOG
+          org: testprameet
+          project: testproj
           pipeline: db_schema_rollout
           inputs:
-            dbInstance: prod
+            identifier: db_schema_rollout
+            variables:
+              - name: target_env
+                type: String
+                value: qa
     - stage:
-        name: "Activity 5 - Production Release"
-        identifier: act_prod
+        name: Deploy QA
+        identifier: deploy_qa
         type: Pipeline
         spec:
-          org: default
-          project: PRODUCT_CATALOG
+          org: testprameet
+          project: testproj
           pipeline: cd_deploy
-          inputs: {}
-  # ---- Cross-cutting orchestration concerns ----
+          inputs:
+            identifier: cd_deploy
+            variables:
+              - name: target_env
+                type: String
+                value: qa
+              - name: image_tag
+                type: String
+                value: <+pipeline.stages.build.output.image_tag>
+    - stage:
+        name: Prod Go No-Go
+        identifier: prod_approval
+        type: Approval
+        spec:
+          execution:
+            steps:
+              - step:
+                  type: HarnessApproval
+                  name: Release Manager Approval
+                  identifier: release_manager_approval
+                  timeout: 1d
+                  spec:
+                    approvalMessage: |-
+                      Approve production release of product-catalog build <+pipeline.stages.build.output.image_tag>.
+                      Dev and QA schema migrations and deployments have passed.
+                    includePipelineExecutionHistory: true
+                    isAutoRejectEnabled: false
+                    approvers:
+                      userGroups:
+                        - release_managers
+                      minimumCount: 1
+                      disallowPipelineExecutor: false
+                    approverInputs: []
+    - stage:
+        name: DB Migrate Prod
+        identifier: db_prod
+        type: Pipeline
+        spec:
+          org: testprameet
+          project: testproj
+          pipeline: db_schema_rollout
+          inputs:
+            identifier: db_schema_rollout
+            variables:
+              - name: target_env
+                type: String
+                value: prod
+    - stage:
+        name: Deploy Prod
+        identifier: deploy_prod
+        type: Pipeline
+        spec:
+          org: testprameet
+          project: testproj
+          pipeline: cd_deploy
+          inputs:
+            identifier: cd_deploy
+            variables:
+              - name: target_env
+                type: String
+                value: prod
+              - name: image_tag
+                type: String
+                value: <+pipeline.stages.build.output.image_tag>
   notificationRules:
-    - name: Release Events to Slack
-      identifier: slack_notify
+    - name: Release Slack
+      identifier: release_slack
       pipelineEvents:
         - type: PipelineStart
         - type: PipelineSuccess
@@ -78,6 +172,4 @@ pipeline:
         spec:
           userGroups: []
           webhookUrl: <+secrets.getValue("slack_release_webhook")>
-      enabled: true
-  # Freeze windows (Deployments > Freeze Windows) automatically block Activity 4/5
-  # during blackout periods — no pipeline change needed; governance enforces it.
+      enabled: false

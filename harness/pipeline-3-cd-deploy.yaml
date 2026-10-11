@@ -1,135 +1,141 @@
 # =============================================================================
-# PIPELINE 3 of 4 — CD: Deploy Helm chart dev -> qa -> prod
-# Deployment strategies:  dev = Rolling,  qa = Rolling + tests,  prod = Canary
-# Each env stage runs its DB migration first (chained child pipeline OR inline
-# DBSchemaApply step), then deploys the app, then verifies.
-# Prod is gated by a manual approval + freeze-window check + Canary analysis.
+# PIPELINE 3 of 4 — CD: deploy ONE build to ONE environment
+# Reusable: the release flow calls it per environment.
+#   dev / qa -> "Deploy Rolling" stage runs
+#   prod     -> "Deploy Canary" stage runs (1 canary pod -> health gate -> full rollout)
+#
+# Needs (Phase 4): service product_catalog, environments dev/qa/prod, and an
+# infrastructure definition with identifier `k8s` inside EACH environment
+# (definitions live in harness/cd/). Smoke tests run on the in-cluster delegate.
 # =============================================================================
 pipeline:
   name: 3 - CD Deploy
   identifier: cd_deploy
-  projectIdentifier: PRODUCT_CATALOG
-  orgIdentifier: default
-  properties:
-    ci: {}
+  projectIdentifier: testproj
+  orgIdentifier: testprameet
+  tags:
+    module: cd
+  variables:
+    - name: target_env
+      type: String
+      description: Environment to deploy to
+      required: true
+      value: <+input>.allowedValues(dev,qa,prod)
+    - name: image_tag
+      type: String
+      description: Build number produced by 1 - CI Build and Push
+      required: true
+      value: <+input>
   stages:
-    # ---------------------------------------------------------------- DEV
     - stage:
-        name: Deploy Dev
-        identifier: deploy_dev
+        name: Deploy Rolling
+        identifier: deploy_rolling
+        description: Rolling deployment for dev and qa
         type: Deployment
+        when:
+          pipelineStatus: Success
+          condition: <+pipeline.variables.target_env> != "prod"
         spec:
           deploymentType: Kubernetes
           service:
-            serviceRef: product_catalog          # Helm-based service
+            serviceRef: product_catalog
             serviceInputs:
               serviceDefinition:
                 type: Kubernetes
                 spec:
                   artifacts:
                     primary:
-                      primaryArtifactRef: dockerhub
                       sources:
                         - identifier: dockerhub
                           type: DockerRegistry
                           spec:
-                            tag: <+input>          # image tag from CI (sequenceId)
+                            tag: <+pipeline.variables.image_tag>
           environment:
-            environmentRef: dev
+            environmentRef: <+pipeline.variables.target_env>
+            deployToAll: false
             infrastructureDefinitions:
-              - identifier: dev_k8s
+              - identifier: k8s
           execution:
             steps:
               - step:
-                  name: Rollout
-                  identifier: rollout_dev
-                  type: HelmDeploy
-                  spec: {}
+                  type: K8sRollingDeploy
+                  name: Rolling Deploy
+                  identifier: rolling_deploy
+                  spec:
+                    skipDryRun: false
+                    pruningEnabled: false
                   timeout: 10m
+              - step:
+                  type: ShellScript
+                  name: Smoke Test
+                  identifier: smoke_test
+                  spec:
+                    shell: Bash
+                    onDelegate: true
+                    executionTarget: {}
+                    source:
+                      type: Inline
+                      spec:
+                        script: |-
+                          BASE="http://product-catalog.<+infra.namespace>.svc.cluster.local"
+                          EXPECTED="<+pipeline.variables.image_tag>"
+                          for i in $(seq 1 12); do
+                            BODY=$(curl -fsS "$BASE/version" || true)
+                            if echo "$BODY" | grep -q "\"version\":\"$EXPECTED\""; then
+                              echo "Live: $BODY"
+                              curl -fsS "$BASE/api/products" && echo
+                              exit 0
+                            fi
+                            echo "Attempt $i: got '$BODY', retrying in 5s"
+                            sleep 5
+                          done
+                          echo "Version $EXPECTED never became live"
+                          exit 1
+                    environmentVariables: []
+                    outputVariables: []
+                  timeout: 5m
             rollbackSteps:
               - step:
-                  name: Rollback
-                  identifier: rollback_dev
-                  type: HelmRollback
-                  spec: {}
+                  type: K8sRollingRollback
+                  name: Rolling Rollback
+                  identifier: rolling_rollback
+                  spec:
+                    pruningEnabled: false
                   timeout: 10m
         failureStrategies:
           - onFailure:
-              errors: [AllErrors]
-              action: {type: StageRollback}
-    # ---------------------------------------------------------------- QA
+              errors:
+                - AllErrors
+              action:
+                type: StageRollback
     - stage:
-        name: Deploy QA
-        identifier: deploy_qa
+        name: Deploy Canary
+        identifier: deploy_canary
+        description: Canary deployment for prod
         type: Deployment
+        when:
+          pipelineStatus: Success
+          condition: <+pipeline.variables.target_env> == "prod"
         spec:
           deploymentType: Kubernetes
           service:
-            useFromStage: {stage: deploy_dev}
+            serviceRef: product_catalog
+            serviceInputs:
+              serviceDefinition:
+                type: Kubernetes
+                spec:
+                  artifacts:
+                    primary:
+                      sources:
+                        - identifier: dockerhub
+                          type: DockerRegistry
+                          spec:
+                            tag: <+pipeline.variables.image_tag>
           environment:
-            environmentRef: qa
+            environmentRef: <+pipeline.variables.target_env>
+            deployToAll: false
             infrastructureDefinitions:
-              - identifier: qa_k8s
-          execution:
-            steps:
-              - step:
-                  name: Rollout
-                  identifier: rollout_qa
-                  type: HelmDeploy
-                  spec: {}
-                  timeout: 10m
-              - step:
-                  name: Smoke and Integration Tests
-                  identifier: qa_tests
-                  type: Http
-                  spec:
-                    url: https://product-catalog.qa.example.com/version
-                    method: GET
-                    assertion: <+httpResponseCode> == 200
-                  timeout: 2m
-            rollbackSteps:
-              - step:
-                  name: Rollback
-                  identifier: rollback_qa
-                  type: HelmRollback
-                  spec: {}
-                  timeout: 10m
-        failureStrategies:
-          - onFailure:
-              errors: [AllErrors]
-              action: {type: StageRollback}
-    # ---------------------------------------------------------------- PROD
-    - stage:
-        name: Approval - Go to Prod
-        identifier: prod_approval
-        type: Approval
-        spec:
-          execution:
-            steps:
-              - step:
-                  name: Release Manager Approval
-                  identifier: rm_approval
-                  type: HarnessApproval
-                  timeout: 1d
-                  spec:
-                    approvalMessage: "Approve production release of product-catalog <+input>?"
-                    includePipelineExecutionHistory: true
-                    approvers:
-                      minimumCount: 1
-                      disallowPipelineExecutor: true
-                      userGroups: [release_managers]
-    - stage:
-        name: Deploy Prod (Canary)
-        identifier: deploy_prod
-        type: Deployment
-        spec:
-          deploymentType: Kubernetes
-          service:
-            useFromStage: {stage: deploy_dev}
-          environment:
-            environmentRef: prod
-            infrastructureDefinitions:
-              - identifier: prod_k8s
+              - identifier: k8s
           execution:
             steps:
               - stepGroup:
@@ -137,50 +143,103 @@ pipeline:
                   identifier: canary
                   steps:
                     - step:
-                        name: Canary Deployment 25%
-                        identifier: canary_deploy
                         type: K8sCanaryDeploy
+                        name: Canary Deploy
+                        identifier: canary_deploy
                         spec:
                           instanceSelection:
-                            type: Percentage
-                            spec: {percentage: 25}
+                            type: Count
+                            spec:
+                              count: 1
+                          skipDryRun: false
                         timeout: 10m
                     - step:
-                        name: Verify (Continuous Verification)
-                        identifier: cv
-                        type: Verify
+                        type: ShellScript
+                        name: Canary Health Gate
+                        identifier: canary_health_gate
                         spec:
-                          type: Canary
-                          spec:
-                            sensitivity: HIGH
-                            duration: 10m
-                        timeout: 15m
+                          shell: Bash
+                          onDelegate: true
+                          executionTarget: {}
+                          source:
+                            type: Inline
+                            spec:
+                              script: |-
+                                URL="http://product-catalog.<+infra.namespace>.svc.cluster.local/actuator/health/readiness"
+                                for i in $(seq 1 24); do
+                                  if ! curl -fsS "$URL" > /dev/null; then
+                                    echo "Health check failed on attempt $i"
+                                    exit 1
+                                  fi
+                                  sleep 5
+                                done
+                                echo "Canary healthy for 2 minutes"
+                          environmentVariables: []
+                          outputVariables: []
+                        timeout: 5m
                     - step:
+                        type: K8sCanaryDelete
                         name: Canary Delete
                         identifier: canary_delete
-                        type: K8sCanaryDelete
                         spec: {}
                         timeout: 10m
-              - step:
-                  name: Rolling Full Rollout
-                  identifier: primary_rollout
-                  type: K8sRollingDeploy
-                  spec: {}
-                  timeout: 15m
+              - stepGroup:
+                  name: Primary
+                  identifier: primary
+                  steps:
+                    - step:
+                        type: K8sRollingDeploy
+                        name: Full Rollout
+                        identifier: full_rollout
+                        spec:
+                          skipDryRun: false
+                          pruningEnabled: false
+                        timeout: 15m
+                    - step:
+                        type: ShellScript
+                        name: Smoke Test
+                        identifier: smoke_test
+                        spec:
+                          shell: Bash
+                          onDelegate: true
+                          executionTarget: {}
+                          source:
+                            type: Inline
+                            spec:
+                              script: |-
+                                BASE="http://product-catalog.<+infra.namespace>.svc.cluster.local"
+                                EXPECTED="<+pipeline.variables.image_tag>"
+                                for i in $(seq 1 12); do
+                                  BODY=$(curl -fsS "$BASE/version" || true)
+                                  if echo "$BODY" | grep -q "\"version\":\"$EXPECTED\""; then
+                                    echo "Live: $BODY"
+                                    exit 0
+                                  fi
+                                  echo "Attempt $i: got '$BODY', retrying in 5s"
+                                  sleep 5
+                                done
+                                echo "Version $EXPECTED never became live"
+                                exit 1
+                          environmentVariables: []
+                          outputVariables: []
+                        timeout: 5m
             rollbackSteps:
               - step:
-                  name: Canary Delete (rollback)
-                  identifier: canary_delete_rb
                   type: K8sCanaryDelete
+                  name: Canary Delete
+                  identifier: rollback_canary_delete
                   spec: {}
                   timeout: 10m
               - step:
+                  type: K8sRollingRollback
                   name: Rolling Rollback
                   identifier: rolling_rollback
-                  type: K8sRollingRollback
-                  spec: {}
-                  timeout: 15m
+                  spec:
+                    pruningEnabled: false
+                  timeout: 10m
         failureStrategies:
           - onFailure:
-              errors: [AllErrors]
-              action: {type: StageRollback}
+              errors:
+                - AllErrors
+              action:
+                type: StageRollback

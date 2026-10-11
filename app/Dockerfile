@@ -22,5 +22,5 @@ ENV APP_VERSION=${APP_VERSION}
 COPY --from=build /workspace/target/product-catalog.jar /app/product-catalog.jar
 
 EXPOSE 8080
-USER nonroot
+USER 65532:65532
 ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75.0", "-jar", "/app/product-catalog.jar"]
