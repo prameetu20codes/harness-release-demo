@@ -4,9 +4,10 @@
 #   dev / qa -> "Deploy Rolling" stage runs
 #   prod     -> "Deploy Canary" stage runs (1 canary pod -> health gate -> full rollout)
 #
-# Needs (Phase 4): service product_catalog, environments dev/qa/prod, and an
-# infrastructure definition with identifier `k8s` inside EACH environment
-# (definitions live in harness/cd/). Smoke tests run on the in-cluster delegate.
+# Needs (Phase 4): service product_catalog and environment releasedevqa holding
+# infrastructure definitions `dev`, `qa`, `prod`; target_env picks the
+# infrastructure (definitions live in harness/cd/). Smoke tests run on the
+# in-cluster delegate.
 # =============================================================================
 pipeline:
   name: 3 - CD Deploy
