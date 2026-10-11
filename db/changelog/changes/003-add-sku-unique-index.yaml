@@ -1,0 +1,14 @@
+databaseChangeLog:
+  - changeSet:
+      id: "003-add-sku-unique-index"
+      author: prameet
+      comment: "Enforce SKU uniqueness — ships with app v2 (release evolution demo)"
+      changes:
+        - addUniqueConstraint:
+            tableName: products
+            columnNames: sku
+            constraintName: uq_products_sku
+      rollback:
+        - dropUniqueConstraint:
+            tableName: products
+            constraintName: uq_products_sku

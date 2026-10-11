@@ -1,0 +1,8 @@
+# Master changelog consumed by Harness DB DevOps.
+# Each included file is an immutable, versioned changeset. Harness tracks which
+# changesets have been applied per environment via the DATABASECHANGELOG table,
+# so promotions across dev -> qa -> prod apply only the delta.
+databaseChangeLog:
+  - includeAll:
+      path: changes/
+      relativeToChangelogFile: true

@@ -1,0 +1,65 @@
+# Base values. Environment-specific files (values-dev/qa/prod.yaml) override these.
+# In Harness CD, the image tag is overridden at deploy time with:
+#   image.tag: <+artifact.tag>   (or <+pipeline.stages...variables...>)
+
+replicaCount: 1
+
+image:
+  repository: docker.io/YOUR_DOCKERHUB_ID/product-catalog
+  tag: latest
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+serviceAccount:
+  create: true
+  name: ""
+
+environment: local
+appVersion: "dev"
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+
+ingress:
+  enabled: false
+  className: nginx
+  host: product-catalog.local
+  path: /
+  pathType: Prefix
+
+# Datasource: URL is per-environment; credentials come from a K8s Secret that
+# Harness syncs from its Secret Manager (never hardcoded in the chart).
+database:
+  url: jdbc:postgresql://postgres:5432/catalog
+  existingSecret: product-catalog-db
+  userKey: DB_USER
+  passwordKey: DB_PASSWORD
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 70
+
+# Actuator-backed probes
+probes:
+  liveness:
+    path: /actuator/health/liveness
+  readiness:
+    path: /actuator/health/readiness
+
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

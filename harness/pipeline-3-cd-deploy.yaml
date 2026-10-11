@@ -1,0 +1,186 @@
+# =============================================================================
+# PIPELINE 3 of 4 — CD: Deploy Helm chart dev -> qa -> prod
+# Deployment strategies:  dev = Rolling,  qa = Rolling + tests,  prod = Canary
+# Each env stage runs its DB migration first (chained child pipeline OR inline
+# DBSchemaApply step), then deploys the app, then verifies.
+# Prod is gated by a manual approval + freeze-window check + Canary analysis.
+# =============================================================================
+pipeline:
+  name: 3 - CD Deploy
+  identifier: cd_deploy
+  projectIdentifier: PRODUCT_CATALOG
+  orgIdentifier: default
+  properties:
+    ci: {}
+  stages:
+    # ---------------------------------------------------------------- DEV
+    - stage:
+        name: Deploy Dev
+        identifier: deploy_dev
+        type: Deployment
+        spec:
+          deploymentType: Kubernetes
+          service:
+            serviceRef: product_catalog          # Helm-based service
+            serviceInputs:
+              serviceDefinition:
+                type: Kubernetes
+                spec:
+                  artifacts:
+                    primary:
+                      primaryArtifactRef: dockerhub
+                      sources:
+                        - identifier: dockerhub
+                          type: DockerRegistry
+                          spec:
+                            tag: <+input>          # image tag from CI (sequenceId)
+          environment:
+            environmentRef: dev
+            infrastructureDefinitions:
+              - identifier: dev_k8s
+          execution:
+            steps:
+              - step:
+                  name: Rollout
+                  identifier: rollout_dev
+                  type: HelmDeploy
+                  spec: {}
+                  timeout: 10m
+            rollbackSteps:
+              - step:
+                  name: Rollback
+                  identifier: rollback_dev
+                  type: HelmRollback
+                  spec: {}
+                  timeout: 10m
+        failureStrategies:
+          - onFailure:
+              errors: [AllErrors]
+              action: {type: StageRollback}
+    # ---------------------------------------------------------------- QA
+    - stage:
+        name: Deploy QA
+        identifier: deploy_qa
+        type: Deployment
+        spec:
+          deploymentType: Kubernetes
+          service:
+            useFromStage: {stage: deploy_dev}
+          environment:
+            environmentRef: qa
+            infrastructureDefinitions:
+              - identifier: qa_k8s
+          execution:
+            steps:
+              - step:
+                  name: Rollout
+                  identifier: rollout_qa
+                  type: HelmDeploy
+                  spec: {}
+                  timeout: 10m
+              - step:
+                  name: Smoke and Integration Tests
+                  identifier: qa_tests
+                  type: Http
+                  spec:
+                    url: https://product-catalog.qa.example.com/version
+                    method: GET
+                    assertion: <+httpResponseCode> == 200
+                  timeout: 2m
+            rollbackSteps:
+              - step:
+                  name: Rollback
+                  identifier: rollback_qa
+                  type: HelmRollback
+                  spec: {}
+                  timeout: 10m
+        failureStrategies:
+          - onFailure:
+              errors: [AllErrors]
+              action: {type: StageRollback}
+    # ---------------------------------------------------------------- PROD
+    - stage:
+        name: Approval - Go to Prod
+        identifier: prod_approval
+        type: Approval
+        spec:
+          execution:
+            steps:
+              - step:
+                  name: Release Manager Approval
+                  identifier: rm_approval
+                  type: HarnessApproval
+                  timeout: 1d
+                  spec:
+                    approvalMessage: "Approve production release of product-catalog <+input>?"
+                    includePipelineExecutionHistory: true
+                    approvers:
+                      minimumCount: 1
+                      disallowPipelineExecutor: true
+                      userGroups: [release_managers]
+    - stage:
+        name: Deploy Prod (Canary)
+        identifier: deploy_prod
+        type: Deployment
+        spec:
+          deploymentType: Kubernetes
+          service:
+            useFromStage: {stage: deploy_dev}
+          environment:
+            environmentRef: prod
+            infrastructureDefinitions:
+              - identifier: prod_k8s
+          execution:
+            steps:
+              - stepGroup:
+                  name: Canary
+                  identifier: canary
+                  steps:
+                    - step:
+                        name: Canary Deployment 25%
+                        identifier: canary_deploy
+                        type: K8sCanaryDeploy
+                        spec:
+                          instanceSelection:
+                            type: Percentage
+                            spec: {percentage: 25}
+                        timeout: 10m
+                    - step:
+                        name: Verify (Continuous Verification)
+                        identifier: cv
+                        type: Verify
+                        spec:
+                          type: Canary
+                          spec:
+                            sensitivity: HIGH
+                            duration: 10m
+                        timeout: 15m
+                    - step:
+                        name: Canary Delete
+                        identifier: canary_delete
+                        type: K8sCanaryDelete
+                        spec: {}
+                        timeout: 10m
+              - step:
+                  name: Rolling Full Rollout
+                  identifier: primary_rollout
+                  type: K8sRollingDeploy
+                  spec: {}
+                  timeout: 15m
+            rollbackSteps:
+              - step:
+                  name: Canary Delete (rollback)
+                  identifier: canary_delete_rb
+                  type: K8sCanaryDelete
+                  spec: {}
+                  timeout: 10m
+              - step:
+                  name: Rolling Rollback
+                  identifier: rolling_rollback
+                  type: K8sRollingRollback
+                  spec: {}
+                  timeout: 15m
+        failureStrategies:
+          - onFailure:
+              errors: [AllErrors]
+              action: {type: StageRollback}

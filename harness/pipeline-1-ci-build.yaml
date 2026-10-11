@@ -1,0 +1,104 @@
+# =============================================================================
+# PIPELINE 1 of 4 — CI: Test -> Build & Push -> Image Scan -> SBOM
+# Runs on Harness Cloud (no delegate/infra needed).
+# Replace YOUR_DOCKERHUB_ID before importing.
+# =============================================================================
+pipeline:
+  name: 1 - CI Build and Push
+  identifier: ci_build_and_push
+  projectIdentifier: PRODUCT_CATALOG
+  orgIdentifier: default
+  tags:
+    module: ci
+  properties:
+    ci:
+      codebase:
+        # Repository-type connector: no repoName. Add `repoName:` only if the
+        # connector URL type is Account.
+        connectorRef: GITHUB_CONNECTOR
+        build: <+input>
+  stages:
+    - stage:
+        name: Build and Push
+        identifier: build_and_push
+        type: CI
+        spec:
+          cloneCodebase: true
+          caching:
+            enabled: true
+          platform:
+            os: Linux
+            arch: Amd64
+          runtime:
+            type: Cloud
+            spec: {}
+          execution:
+            steps:
+              - step:
+                  type: Run
+                  name: Unit Tests
+                  identifier: unit_tests
+                  spec:
+                    connectorRef: DOCKERHUB_CONNECTOR
+                    image: maven:3.9-eclipse-temurin-17
+                    shell: Sh
+                    command: |-
+                      cd app
+                      mvn -B test
+                    reports:
+                      type: JUnit
+                      spec:
+                        paths:
+                          - app/target/surefire-reports/*.xml
+              - step:
+                  type: BuildAndPushDockerRegistry
+                  name: Build and Push Image
+                  identifier: build_and_push_image
+                  spec:
+                    connectorRef: DOCKERHUB_CONNECTOR
+                    repo: YOUR_DOCKERHUB_ID/product-catalog
+                    dockerfile: app/Dockerfile
+                    context: app
+                    tags:
+                      - <+pipeline.sequenceId>
+                      - <+codebase.shortCommitSha>
+                    buildArgs:
+                      APP_VERSION: <+pipeline.sequenceId>
+                    caching: true
+              - parallel:
+                  - step:
+                      type: AquaTrivy
+                      name: Trivy Image Scan
+                      identifier: trivy_image_scan
+                      spec:
+                        mode: orchestration
+                        config: default
+                        target:
+                          type: container
+                          detection: auto
+                        advanced:
+                          log:
+                            level: info
+                          fail_on_severity: critical
+                        privileged: true
+                        image:
+                          type: docker_v2
+                          name: YOUR_DOCKERHUB_ID/product-catalog
+                          tag: <+pipeline.sequenceId>
+                          access_id: YOUR_DOCKERHUB_ID
+                          access_token: <+secrets.getValue("dockerhub_token")>
+                  - step:
+                      type: SscaOrchestration
+                      name: Generate SBOM
+                      identifier: generate_sbom
+                      spec:
+                        mode: generation
+                        tool:
+                          type: Syft
+                          spec:
+                            format: spdx-json
+                        source:
+                          type: image
+                          spec:
+                            connector: DOCKERHUB_CONNECTOR
+                            image: YOUR_DOCKERHUB_ID/product-catalog:<+pipeline.sequenceId>

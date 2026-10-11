@@ -1,0 +1,16 @@
+# Local rehearsal only — spins up Postgres so you can dry-run Liquibase and the app
+# before wiring everything into Harness. NOT used by the Harness pipelines.
+#   docker compose up -d
+#   # apply schema locally with the Liquibase CLI:
+#   liquibase --changeLogFile=db/changelog/db.changelog-master.yaml \
+#             --url=jdbc:postgresql://localhost:5432/catalog \
+#             --username=catalog_app --password=catalog_pw update
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: catalog
+      POSTGRES_USER: catalog_app
+      POSTGRES_PASSWORD: catalog_pw
+    ports:
+      - "5432:5432"

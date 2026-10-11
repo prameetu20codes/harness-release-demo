@@ -1,0 +1,83 @@
+# =============================================================================
+# PIPELINE 4 of 4 — RELEASE ORCHESTRATION (the "conductor")
+# Clubs the three child pipelines into ONE governed release train using
+# Pipeline-chaining stages. This is what you run/demo end-to-end. It models the
+# release as ordered "activities": Build -> (per env) DB Migrate -> Deploy -> Verify,
+# with approvals, freeze-window governance, and notifications between them.
+#
+# Each stage below is type: Pipeline — it invokes a child pipeline and waits.
+# =============================================================================
+pipeline:
+  name: 4 - Release Orchestration
+  identifier: release_orchestration
+  projectIdentifier: PRODUCT_CATALOG
+  orgIdentifier: default
+  stages:
+    - stage:
+        name: "Activity 1 - Build Artifact"
+        identifier: act_build
+        type: Pipeline
+        spec:
+          org: default
+          project: PRODUCT_CATALOG
+          pipeline: ci_build_and_push
+          inputs: {}          # supply codebase build inputs here / via trigger
+    - stage:
+        name: "Activity 2 - DB Migrate Dev"
+        identifier: act_db_dev
+        type: Pipeline
+        spec:
+          org: default
+          project: PRODUCT_CATALOG
+          pipeline: db_schema_rollout
+          inputs:
+            dbInstance: dev
+    - stage:
+        name: "Activity 3 - Deploy + Verify Dev/QA"
+        identifier: act_deploy_lower
+        type: Pipeline
+        spec:
+          org: default
+          project: PRODUCT_CATALOG
+          pipeline: cd_deploy
+          inputs:
+            imageTag: <+pipeline.stages.act_build.spec.execution... sequenceId>
+    # --- Production activity is fenced behind governance ---
+    - stage:
+        name: "Activity 4 - DB Migrate Prod"
+        identifier: act_db_prod
+        type: Pipeline
+        when:
+          pipelineStatus: Success
+        spec:
+          org: default
+          project: PRODUCT_CATALOG
+          pipeline: db_schema_rollout
+          inputs:
+            dbInstance: prod
+    - stage:
+        name: "Activity 5 - Production Release"
+        identifier: act_prod
+        type: Pipeline
+        spec:
+          org: default
+          project: PRODUCT_CATALOG
+          pipeline: cd_deploy
+          inputs: {}
+  # ---- Cross-cutting orchestration concerns ----
+  notificationRules:
+    - name: Release Events to Slack
+      identifier: slack_notify
+      pipelineEvents:
+        - type: PipelineStart
+        - type: PipelineSuccess
+        - type: PipelineFailed
+        - type: StageFailed
+      notificationMethod:
+        type: Slack
+        spec:
+          userGroups: []
+          webhookUrl: <+secrets.getValue("slack_release_webhook")>
+      enabled: true
+  # Freeze windows (Deployments > Freeze Windows) automatically block Activity 4/5
+  # during blackout periods — no pipeline change needed; governance enforces it.

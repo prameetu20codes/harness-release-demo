@@ -1,0 +1,14 @@
+replicaCount: 1
+environment: dev
+service:
+  type: ClusterIP
+ingress:
+  enabled: true
+  host: product-catalog.dev.example.com
+database:
+  url: jdbc:postgresql://postgres.catalog-dev:5432/catalog
+autoscaling:
+  enabled: false
+resources:
+  requests: {cpu: 100m, memory: 256Mi}
+  limits: {cpu: 300m, memory: 384Mi}

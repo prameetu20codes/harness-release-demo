@@ -1,0 +1,49 @@
+# =============================================================================
+# PIPELINE 2 of 4 — DB DevOps: Apply Liquibase schema changes per environment
+# Uses the Harness DB DevOps stage (type: DBSchemaOps / DBOps).
+# The DB Schema points at db/changelog/db.changelog-master.yaml in this repo.
+# A DB Instance is registered per environment (dev/qa/prod) with its JDBC URL +
+# secret-backed credentials. Harness applies only the un-applied changesets.
+#
+# KEY DEMO POINT: schema is promoted BEFORE the app so the running code never
+# sees a column it expects but the DB lacks.
+# =============================================================================
+pipeline:
+  name: 2 - DB Schema Rollout
+  identifier: db_schema_rollout
+  projectIdentifier: PRODUCT_CATALOG
+  orgIdentifier: default
+  stages:
+    - stage:
+        name: DB Migrate
+        identifier: db_migrate
+        type: PipelineRollback   # placeholder-safe; set to DBOps stage in UI
+        spec:
+          execution:
+            steps:
+              - step:
+                  name: Dry Run (Preview SQL)
+                  identifier: db_dry_run
+                  type: DBSchemaApply
+                  spec:
+                    dbSchema: product_catalog_schema     # DB Schema entity id
+                    dbInstance: <+input>                 # dev / qa / prod instance
+                    runAsDryRun: true                    # preview changeset SQL only
+              - step:
+                  name: Apply Schema Changes
+                  identifier: db_apply
+                  type: DBSchemaApply
+                  spec:
+                    dbSchema: product_catalog_schema
+                    dbInstance: <+input>
+                    runAsDryRun: false
+                  failureStrategies:
+                    - onFailure:
+                        errors: [AllErrors]
+                        action:
+                          type: StageRollback   # Liquibase rollback of applied set
+# -----------------------------------------------------------------------------
+# NOTE: In the Harness UI, create this stage via "Database DevOps" so the correct
+# step palette (DBSchemaApply / DBSchemaRollback) is generated. The block above
+# is a readable reference of the shape you will end up with.
+# -----------------------------------------------------------------------------

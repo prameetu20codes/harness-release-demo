@@ -1,0 +1,31 @@
+databaseChangeLog:
+  - changeSet:
+      id: "002-seed-products"
+      author: prameet
+      comment: "Seed reference catalog data"
+      changes:
+        - insert:
+            tableName: products
+            columns:
+              - column: {name: sku, value: "SKU-001"}
+              - column: {name: name, value: "Wireless Mouse"}
+              - column: {name: category, value: "peripherals"}
+              - column: {name: price, valueNumeric: "24.99"}
+        - insert:
+            tableName: products
+            columns:
+              - column: {name: sku, value: "SKU-002"}
+              - column: {name: name, value: "Mechanical Keyboard"}
+              - column: {name: category, value: "peripherals"}
+              - column: {name: price, valueNumeric: "89.00"}
+        - insert:
+            tableName: products
+            columns:
+              - column: {name: sku, value: "SKU-003"}
+              - column: {name: name, value: "27-inch Monitor"}
+              - column: {name: category, value: "displays"}
+              - column: {name: price, valueNumeric: "219.50"}
+      rollback:
+        - delete:
+            tableName: products
+            where: "sku IN ('SKU-001','SKU-002','SKU-003')"

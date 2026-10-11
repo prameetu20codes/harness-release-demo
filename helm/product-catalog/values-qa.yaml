@@ -1,0 +1,17 @@
+replicaCount: 2
+environment: qa
+service:
+  type: ClusterIP
+ingress:
+  enabled: true
+  host: product-catalog.qa.example.com
+database:
+  url: jdbc:postgresql://postgres.catalog-qa:5432/catalog
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 4
+  targetCPUUtilizationPercentage: 70
+resources:
+  requests: {cpu: 150m, memory: 320Mi}
+  limits: {cpu: 500m, memory: 512Mi}

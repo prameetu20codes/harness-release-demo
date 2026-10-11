@@ -1,0 +1,12 @@
+# Test-only config: let Hibernate build the H2 schema so tests are self-contained.
+# Production schema is always owned by Harness DB DevOps / Liquibase.
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+  liquibase:
+    enabled: false
+  datasource:
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;MODE=PostgreSQL
+    username: sa
+    password:
