@@ -1,8 +1,14 @@
 # Master changelog consumed by Harness DB DevOps.
-# Each included file is an immutable, versioned changeset. Harness tracks which
-# changesets have been applied per environment via the DATABASECHANGELOG table,
-# so promotions across dev -> qa -> prod apply only the delta.
+# Explicit includes keep the apply order reviewable in every PR. Applied
+# changesets are immutable: never edit one, always add a new file.
 databaseChangeLog:
-  - includeAll:
-      path: changes/
+  - include:
+      file: changes/001-create-products-table.yaml
       relativeToChangelogFile: true
+  - include:
+      file: changes/002-seed-products.yaml
+      relativeToChangelogFile: true
+  # Release demo: uncomment and push to ship a schema change through dev -> qa -> prod.
+  # - include:
+  #     file: changes/003-add-sku-unique-index.yaml
+  #     relativeToChangelogFile: true
