@@ -115,29 +115,20 @@ pipeline:
                           skipDryRun: false
                         timeout: 10m
                     - step:
-                        type: ShellScript
-                        name: Canary Health Gate
-                        identifier: canary_health_gate
+                        type: HarnessApproval
+                        name: HarnessApproval_1
+                        identifier: HarnessApproval_1
                         spec:
-                          shell: Bash
-                          onDelegate: true
-                          executionTarget: {}
-                          source:
-                            type: Inline
-                            spec:
-                              script: |-
-                                URL="http://product-catalog.<+infra.namespace>.svc.cluster.local/actuator/health/readiness"
-                                for i in $(seq 1 24); do
-                                  if ! curl -fsS "$URL" > /dev/null; then
-                                    echo "Health check failed on attempt $i"
-                                    exit 1
-                                  fi
-                                  sleep 5
-                                done
-                                echo "Canary healthy for 2 minutes"
-                          environmentVariables: []
-                          outputVariables: []
-                        timeout: 5m
+                          approvalMessage: Please review the following information and approve the pipeline progression
+                          includePipelineExecutionHistory: true
+                          isAutoRejectEnabled: false
+                          approvers:
+                            userGroups:
+                              - prameetrg
+                            minimumCount: 1
+                            disallowPipelineExecutor: false
+                          approverInputs: []
+                        timeout: 1d
                     - step:
                         type: K8sCanaryDelete
                         name: Canary Delete
@@ -156,34 +147,6 @@ pipeline:
                           skipDryRun: false
                           pruningEnabled: false
                         timeout: 15m
-                    - step:
-                        type: ShellScript
-                        name: Smoke Test
-                        identifier: smoke_test
-                        spec:
-                          shell: Bash
-                          onDelegate: true
-                          executionTarget: {}
-                          source:
-                            type: Inline
-                            spec:
-                              script: |-
-                                BASE="http://product-catalog.<+infra.namespace>.svc.cluster.local"
-                                EXPECTED="<+pipeline.variables.image_tag>"
-                                for i in $(seq 1 12); do
-                                  BODY=$(curl -fsS "$BASE/version" || true)
-                                  if echo "$BODY" | grep -q "\"version\":\"$EXPECTED\""; then
-                                    echo "Live: $BODY"
-                                    exit 0
-                                  fi
-                                  echo "Attempt $i: got '$BODY', retrying in 5s"
-                                  sleep 5
-                                done
-                                echo "Version $EXPECTED never became live"
-                                exit 1
-                          environmentVariables: []
-                          outputVariables: []
-                        timeout: 5m
             rollbackSteps:
               - step:
                   type: K8sCanaryDelete
